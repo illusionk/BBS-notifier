@@ -62,8 +62,9 @@ int main(int argc , char *argv[]) {
     struct sockaddr_in server;
     unsigned char buf[BUFLEN + 1];
     int len;
-    int i;
+    int i, j;
  
+ 	/*
     if (argc < 2 || argc > 3) {
         printf("Usage: %s address [port]\n", argv[0]);
         return 1;
@@ -71,6 +72,7 @@ int main(int argc , char *argv[]) {
     int port = 23;
     if (argc == 3)
         port = atoi(argv[2]);
+    */
  
     //Create socket
     sock = socket(AF_INET , SOCK_STREAM , 0);
@@ -101,7 +103,10 @@ int main(int argc , char *argv[]) {
 
     unsigned char temp[300];
     unsigned char test[3];
-    int tempx = 0;
+    int stringIndex = 0;
+    int specialChar = 0;
+    int big5Check = 0;
+    int big5Special = 0;
     int login = 0;
 
     while (1) {
@@ -143,54 +148,79 @@ int main(int argc , char *argv[]) {
                 negotiate(sock, buf, 3);
             }
             else {
-                if (tempx == 1) {
-
+            	if (specialChar == 1) {
+            		/* end of special character */
+            		if (buf[0] == 0x6D)
+            			specialChar = 0;
+            		continue;
+            	}
+                if (big5Check == 1) {
                     /* Big-5 higher */
                     test[1] = buf[0];
-                    printf("[%x %x]", test[0], test[1]);
-                    printf("-%s-\n", test);
                     test[2] = '\0';
-                    tempx = 0;
+
+                    /* Special char? */
+                    if( ((test[0] == 0xA1 && test[1] >= 0x40) && (test[0] == 0xA1 && test[1] <= 0xFE)) ||
+                    ((test[0] == 0xA2 && test[1] >= 0x40) && (test[0] == 0xA2 && test[1] <= 0xCC)) || 
+                	((test[0] == 0xA3 && test[1] >= 0x46) && (test[0] == 0xA3 && test[1] <= 0xBF)) || 
+                	((test[0] == 0xF9 && test[1] >= 0xD6) && (test[0] == 0xF9 && test[1] <= 0xFE)) ) {
+                    	big5Check = 0;
+                    	continue;
+                    }
+                    big5Check = 0;
+                    temp[stringIndex] = test[0];
+                    stringIndex++; 
+                    temp[stringIndex] = test[1];
+                    stringIndex++; 
                 }
                 else if (buf[0] >= 0x81 && buf[0] <= 0xFE) {
 
                     /* Big-5 lower */
                     test[0] = buf[0];
-                    tempx = 1;
+                    big5Check = 1;
                 }
-                else if(buf[0] != 0x20 && buf[0] != 0x8){
-                    /* normal bit */
-                    printf("[%x]", buf[0]);
-                    printf("-%c-\n", buf[0]);
+                else if (buf[0] == 0x5B) {
+                	/* special characater */
+                	specialChar = 1;
+                	continue;
+                }
+                else if(buf[0] == 0x20 || buf[0] == 0x8 || buf[0] == 0xD || buf[0] == 0xA){
+                    /* special bit */
+                    continue;
                 }
                 else if(buf[0] == 0x1B) {
                     /* break */
-                    printf("[%x]", buf[0]);
-                    printf("-%c-\n", buf[0]);
-                    //printf("\n");
+                    if (stringIndex > 0) {
+	                    temp[stringIndex] = '\0';
+	                    
+	                    /*for(j = 0; j < stringIndex; j++) {
+	                    	printf("\\0x%x\\", temp[j]);
+	                    }*/
+	                    printf("\n[%s]\n", temp);
+
+	                    /*
+
+	                    */
+	                    stringIndex = 0;
+	                    memset(temp, '\0', 300);
+	                }
                 }
                 else {
-                    printf("[%x]", buf[0]);
-                    printf("-%c-\n", buf[0]);
+                    temp[stringIndex] = buf[0];
+                    stringIndex++; 
                 }
+
                 len = 1;
                 buf[len] = '\0';
                 fflush(0);
             }
         }
         else if (FD_ISSET(0, &fds)) {
-
             buf[0] = getc(stdin); //fgets(buf, 1, stdin);
             if (send(sock, buf, 1, 0) < 0)
                 return 1;
             if (buf[0] == '\n') // with the terminal in raw mode we need to force a LF
                 send(sock, "\r", 1, 0);
-            /*
-            if (login == 0) {
-                send(sock, "\r\r\r\r", 4, 0);
-                login = 1;
-            }
-            */
         }
     }
     close(sock);
